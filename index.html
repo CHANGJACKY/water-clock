@@ -8,7 +8,7 @@
   <link rel="icon" href="icon.png" />
   <meta name="theme-color" content="#007bff" />
   <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -124,9 +124,10 @@
   <div id="groupedRecords"></div>
 
   <script>
+    const { createClient } = supabase;
     const supabaseUrl = 'https://raayhkdkaqjkpbudaulv.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhYXloa2RrYXFqa3BidWRhdWx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyMDAzNTgsImV4cCI6MjA2Njc3NjM1OH0.qkXfWvB_FkZ0LXwqzh-nC72BuRu8PmVnJiTC5lQYfZE';
-    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+    const supabaseClient = createClient(supabaseUrl, supabaseKey);
     let records = [];
 
     window.onload = async function () {
@@ -135,41 +136,28 @@
       await loadRecords();
     };
 
-    async function addRecord(status) {
-      const name = document.getElementById('name').value;
-      const date = document.getElementById('date').value;
-
-      if (!date) {
-        alert("請選擇日期");
+    async function clearRecords() {
+      const password = prompt("請輸入密碼才能清除紀錄：");
+      if (password !== "08254575") {
+        alert("密碼錯誤，無法清除紀錄！");
         return;
       }
 
-      const existing = records.find(r => r.name === name && r.date === date);
-      if (existing) {
-        const overwrite = confirm(`${name} 在 ${date} 已有狀況紀錄為「${existing.status}」，是否覆蓋？`);
-        if (!overwrite) return;
-        await supabase.from('waterclock').delete().eq('name', name).eq('date', date);
-      }
+      if (!confirm("密碼正確，確定要刪除所有記錄嗎？")) return;
 
-      const newRecord = { name, date, status };
-      const { error } = await supabase.from('waterclock').insert([newRecord]);
+      records = [];
+      localStorage.removeItem('attendRecords');
+      document.getElementById('groupedRecords').innerHTML = '';
+      document.getElementById('result').innerText = '所有紀錄已清除。';
+
+      const { error } = await supabase
+        .from('waterclock')
+        .delete()
+        .neq('id', 0); // 重點在這裡
+
       if (error) {
-        alert("❌ 寫入失敗：" + error.message);
-        return;
+        alert("雲端清除失敗：" + error.message);
       }
-
-      document.getElementById('result').innerText = `${name} 在 ${date} 的狀況更新為：${status}`;
-      await loadRecords();
-    }
-
-    async function loadRecords() {
-      const { data, error } = await supabase.from('waterclock').select('*').order('date', { ascending: true });
-      if (error) {
-        alert("❌ 讀取失敗：" + error.message);
-        return;
-      }
-      records = data || [];
-      displayGroupedRecords();
     }
 
     function displayGroupedRecords() {
@@ -203,21 +191,16 @@
       XLSX.writeFile(workbook, "每日到勤報表.xlsx");
     }
 
-    async function clearRecords() {
-      const password = prompt("請輸入密碼才能清除紀錄：");
-      if (password !== "08254575") {
-        alert("密碼錯誤，無法清除紀錄！");
-        return;
-      }
-      if (confirm("密碼正確，確定要刪除所有記錄嗎？")) {
-        const { error } = await supabase.from("waterclock").delete().neq("id", "");
-        if (error) {
-          alert("❌ 清除失敗：" + error.message);
-          return;
-        }
-        records = [];
-        document.getElementById('groupedRecords').innerHTML = '';
-        document.getElementById('result').innerText = '所有紀錄已清除。';
+    async function clearAllRecordsFromSupabase() {
+      const { error } = await supabase
+        .from('waterclock')
+        .delete()
+        .neq('id', 0); 
+
+      if (error) {
+        alert("清除失敗：" + error.message);
+      } else {
+        alert("雲端紀錄已成功清除！");
       }
     }
 
