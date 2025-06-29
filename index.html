@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>水起來打卡系統</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.png" />
+  <meta name="theme-color" content="#007bff" />
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+    }
+    h2 {
+      text-align: center;
+    }
+    label {
+      margin-top: 15px;
+      display: block;
+    }
+    select, input[type="date"] {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      margin-top: 5px;
+    }
+    .status-buttons {
+      margin-top: 15px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .status-buttons button {
+      flex: 1;
+      padding: 15px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+    }
+    .出勤 { background-color: #28a745; }
+    .請假 { background-color: #ffc107; color: black; }
+    .出差 { background-color: #17a2b8; }
+    .受訓 { background-color: #dc3545; }
+    .action-buttons {
+      margin-top: 20px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .action-buttons button {
+      flex: 1;
+      padding: 12px;
+      font-size: 16px;
+      margin-right: 10px;
+      border: none;
+      border-radius: 5px;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    .action-buttons button:last-child {
+      margin-right: 0;
+      background-color: #6c757d;
+    }
+    #result {
+      margin-top: 20px;
+      color: green;
+      font-weight: bold;
+      text-align: center;
+    }
+    #groupedRecords {
+      margin-top: 25px;
+    }
+    #groupedRecords h4 {
+      margin-bottom: 5px;
+    }
+    #groupedRecords p {
+      margin: 2px 0;
+      padding-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>每日到勤登記（手機版）</h2>
+
+  <label for="name">員工姓名</label>
+  <select id="name">
+    <option value="科長">科長</option>
+    <option value="奕汎">奕汎</option>
+    <option value="旻修">旻修</option>
+    <option value="品儒">品儒</option>
+    <option value="晉民">晉民</option>
+    <option value="俊源">俊源</option>
+    <option value="聖傑">聖傑</option>
+    <option value="明璇">明璇</option>
+    <option value="昱馨">昱馨</option>
+    <option value="宇璿">宇璿</option>
+    <option value="田博">田博</option>
+  </select>
+
+  <label for="date">日期</label>
+  <input type="date" id="date" />
+
+  <label>狀況</label>
+  <div class="status-buttons">
+    <button class="出勤" onclick="addRecord('出勤')">出勤</button>
+    <button class="請假" onclick="addRecord('請假')">請假</button>
+    <button class="出差" onclick="addRecord('出差')">出差</button>
+    <button class="受訓" onclick="addRecord('受訓')">受訓</button>
+  </div>
+
+  <div class="action-buttons">
+    <button onclick="downloadExcel()">下載報表</button>
+    <button onclick="clearRecords()">清除所有紀錄</button>
+  </div>
+
+  <div id="result"></div>
+  <div id="groupedRecords"></div>
+
+  <script>
+    const supabaseUrl = 'https://raayhkdkaqjkpbudaulv.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhYXloa2RrYXFqa3BidWRhdWx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyMDAzNTgsImV4cCI6MjA2Njc3NjM1OH0.qkXfWvB_FkZ0LXwqzh-nC72BuRu8PmVnJiTC5lQYfZE';
+    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+    let records = [];
+
+    window.onload = async function () {
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('date').value = today;
+      await loadRecords();
+    };
+
+    async function addRecord(status) {
+      const name = document.getElementById('name').value;
+      const date = document.getElementById('date').value;
+
+      if (!date) {
+        alert("請選擇日期");
+        return;
+      }
+
+      const existing = records.find(r => r.name === name && r.date === date);
+      if (existing) {
+        const overwrite = confirm(`${name} 在 ${date} 已有狀況紀錄為「${existing.status}」，是否覆蓋？`);
+        if (!overwrite) return;
+        await supabase.from('water-clock').delete().eq('name', name).eq('date', date);
+      }
+
+      const newRecord = { name, date, status };
+      const { error } = await supabase.from('water-clock').insert([newRecord]);
+      if (error) {
+        alert("❌ 寫入失敗：" + error.message);
+        return;
+      }
+
+      document.getElementById('result').innerText = `${name} 在 ${date} 的狀況更新為：${status}`;
+      await loadRecords();
+    }
+
+    async function loadRecords() {
+      const { data, error } = await supabase.from('water-clock').select('*').order('date', { ascending: true });
+      if (error) {
+        alert("❌ 讀取失敗：" + error.message);
+        return;
+      }
+      records = data || [];
+      displayGroupedRecords();
+    }
+
+    function displayGroupedRecords() {
+      const container = document.getElementById('groupedRecords');
+      container.innerHTML = '';
+      const grouped = {};
+      records.forEach(record => {
+        if (!grouped[record.date]) grouped[record.date] = [];
+        grouped[record.date].push(record);
+      });
+      Object.keys(grouped).forEach(date => {
+        const section = document.createElement('div');
+        section.innerHTML = `<h4>📅 ${date}</h4>`;
+        grouped[date].forEach(rec => {
+          const p = document.createElement('p');
+          p.innerText = `- ${rec.name}｜${rec.status}`;
+          section.appendChild(p);
+        });
+        container.appendChild(section);
+      });
+    }
+
+    function downloadExcel() {
+      if (records.length === 0) {
+        alert("目前尚無紀錄可下載！");
+        return;
+      }
+      const worksheet = XLSX.utils.json_to_sheet(records);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "打卡紀錄");
+      XLSX.writeFile(workbook, "每日到勤報表.xlsx");
+    }
+
+    async function clearRecords() {
+      const password = prompt("請輸入密碼才能清除紀錄：");
+      if (password !== "08254575") {
+        alert("密碼錯誤，無法清除紀錄！");
+        return;
+      }
+      if (confirm("密碼正確，確定要刪除所有記錄嗎？")) {
+        const { error } = await supabase.from("water-clock").delete().neq("id", "");
+        if (error) {
+          alert("❌ 清除失敗：" + error.message);
+          return;
+        }
+        records = [];
+        document.getElementById('groupedRecords').innerHTML = '';
+        document.getElementById('result').innerText = '所有紀錄已清除。';
+      }
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(() => {
+        console.log("✅ Service Worker 註冊成功");
+      });
+    }
+  </script>
+</body>
+</html>
